@@ -1,8 +1,8 @@
 # aliasctl
 
-<img src="./assets/aliasctl_logo.svg" alt="AliasCtl Logo" width="300" height="300">
+<img src="./assets/aliasctl_logo.svg" alt="aliasctl Logo" width="300" height="300">
 
-AliasCtl is a cross-platform shell alias manager designed to simplify the management of shell aliases. It supports various shells including bash, zsh, fish, ksh, powershell, pwsh (PowerShell Core), and cmd. This tool is particularly useful for CNCF and Kubernetes users who often work with multiple shell environments.
+aliasctl is a cross-platform shell alias manager designed to simplify the management of shell aliases. It supports various shells including bash, zsh, fish, ksh, powershell, pwsh (PowerShell Core), and cmd. This tool is particularly useful for CNCF and Kubernetes users who often work with multiple shell environments.
 
 ## Features
 
@@ -15,7 +15,7 @@ AliasCtl is a cross-platform shell alias manager designed to simplify the manage
 
 ## Installation
 
-To install AliasCtl, clone the repository and build the binary:
+To install aliasctl, clone the repository and build the binary:
 
 ```sh
 git clone https://github.com/aliasctl/aliasctl.git
@@ -25,7 +25,7 @@ go build -o aliasctl ./cmd/aliasctl
 
 ## Usage
 
-AliasCtl provides various commands to manage your shell aliases. Below are some examples:
+aliasctl provides various commands to manage your shell aliases. Below are some examples:
 
 ### List Aliases
 
@@ -123,7 +123,7 @@ We welcome contributions from the community. Please read our [contributing guide
 
 ## License
 
-AliasCtl is licensed under the MIT License. See the [LICENSE](LICENSE) file for more details.
+aliasctl is licensed under the MIT License. See the [LICENSE](LICENSE) file for more details.
 
 ## Contact
 

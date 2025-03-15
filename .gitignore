@@ -1,0 +1,77 @@
+# Binaries for programs and plugins
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+
+# Output of the go coverage tool, specifically when used with LiteIDE
+*.coverprofile
+
+# Temporary files
+*.tmp
+
+# Go workspace file
+go.work
+
+# Go modules
+go.mod
+go.sum
+
+# Go build artifacts
+bin/
+build/
+dist/
+
+# VSCode settings
+.vscode/
+.vscode/*
+
+# macOS files
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# macOS resource forks
+._*
+
+# macOS Finder
+.Spotlight-V100
+.Trashes
+.VolumeIcon.icns
+.com.apple.timemachine.donotpresent
+
+# macOS metadata
+.metadata_never_index
+.metadata_never_index_unless_rootfs
+
+# macOS temporary files
+.TemporaryItems
+.apdisk
+
+# Windows thumbnail cache
+Thumbs.db
+ehthumbs.db
+
+# Windows image file cache
+*.stackdump
+
+# Windows folder config file
+Desktop.ini
+
+# Windows Recycle Bin used on file shares
+$RECYCLE.BIN/
+
+# Windows file system
+*.cab
+*.msi
+*.msm
+*.msp
+
+# Windows shortcuts
+*.lnk
+
+# Linux temporary files
+*~
