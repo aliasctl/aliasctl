@@ -4,7 +4,10 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
+	"strings"
+	"time"
 )
 
 // ConvertAlias converts an alias from one shell to another using the configured AI provider.
@@ -23,32 +26,62 @@ func (am *AliasManager) ConvertAlias(name, targetShell string) (string, error) {
 
 // ConvertAlias for OllamaProvider converts an alias using the Ollama AI service.
 func (op *OllamaProvider) ConvertAlias(alias, fromShell, toShell string) (string, error) {
+	// Validate endpoint
+	if !strings.HasPrefix(op.Endpoint, "http://") && !strings.HasPrefix(op.Endpoint, "https://") {
+		return "", fmt.Errorf("invalid Ollama endpoint. Must start with http:// or https://")
+	}
+
 	prompt := fmt.Sprintf("Convert the following command from %s shell to %s shell: %s", fromShell, toShell, alias)
 
 	requestBody, err := json.Marshal(map[string]interface{}{
 		"model":  op.Model,
 		"prompt": prompt,
+		"stream": false, // Disable streaming to get full response
 	})
 	if err != nil {
 		return "", err
 	}
 
-	resp, err := http.Post(op.Endpoint, "application/json", bytes.NewBuffer(requestBody))
+	// Add timeout to prevent hanging
+	client := &http.Client{
+		Timeout: 30 * time.Second,
+	}
+
+	resp, err := client.Post(op.Endpoint+"/api/generate", "application/json", bytes.NewBuffer(requestBody))
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("error connecting to Ollama: %v", err)
 	}
 	defer resp.Body.Close()
 
-	var result map[string]interface{}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return "", err
+	// Read the entire response body
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("error reading response body: %v", err)
 	}
 
-	if response, ok := result["response"].(string); ok {
-		return response, nil
+	// Define a struct to match the Ollama response
+	var ollamaResponse struct {
+		Response string `json:"response"`
+		Done     bool   `json:"done"`
 	}
 
-	return "", fmt.Errorf("unexpected response format from Ollama")
+	err = json.Unmarshal(body, &ollamaResponse)
+	if err != nil {
+		return "", fmt.Errorf("error parsing Ollama response: %v. Raw response: %s", err, string(body))
+	}
+
+	// Trim any leading/trailing whitespace
+	convertedAlias := strings.TrimSpace(ollamaResponse.Response)
+
+	// Extract the actual alias definition
+	aliasLines := strings.Split(convertedAlias, "\n")
+	for _, line := range aliasLines {
+		if strings.HasPrefix(line, "alias ") {
+			return strings.TrimSpace(line), nil
+		}
+	}
+
+	return convertedAlias, nil
 }
 
 // ConvertAlias for OpenAIProvider converts an alias using the OpenAI-compatible API.
