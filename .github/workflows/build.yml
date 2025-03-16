@@ -6,6 +6,7 @@ on:
       - main
     tags:
       - 'v*.*.*'
+      - 'v*.*.*-*'  # Add support for pre-release tags
   pull_request:
     branches:
       - main
@@ -52,27 +53,39 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/v')
     
     steps:
+    - name: Determine Release Type
+      id: release_type
+      run: |
+        TAG=${GITHUB_REF#refs/tags/}
+        
+        # Check for draft flag
+        if [[ $TAG == *"-draft" ]]; then
+          echo "is_draft=true" >> $GITHUB_OUTPUT
+          echo "is_prerelease=false" >> $GITHUB_OUTPUT
+        
+        # Check for prerelease flag
+        elif [[ $TAG == *"-alpha"* || $TAG == *"-beta"* || $TAG == *"-rc"* ]]; then
+          echo "is_draft=false" >> $GITHUB_OUTPUT
+          echo "is_prerelease=true" >> $GITHUB_OUTPUT
+        
+        # Normal release
+        else
+          echo "is_draft=false" >> $GITHUB_OUTPUT
+          echo "is_prerelease=false" >> $GITHUB_OUTPUT
+        fi
+
     - name: Checkout code
       uses: actions/checkout@v4
 
     - name: Download all artifacts
       uses: actions/download-artifact@v4
 
-    - name: Create Release
-      id: create_release
-      uses: actions/create-release@v1
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      with:
-        tag_name: ${{ github.ref_name }}
-        release_name: Release ${{ github.ref_name }}
-        draft: false
-        prerelease: false
-
     - name: Upload Release Assets
       uses: softprops/action-gh-release@v1
       with:
         files: |
           aliasctl-*/*
+        draft: ${{ steps.release_type.outputs.is_draft }}
+        prerelease: ${{ steps.release_type.outputs.is_prerelease }}
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
