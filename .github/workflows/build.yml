@@ -24,10 +24,10 @@ jobs:
 
     steps:
     - name: Checkout code
-      uses: actions/checkout@v2
+      uses: actions/checkout@v4
 
     - name: Set up Go
-      uses: actions/setup-go@v2
+      uses: actions/setup-go@v5
       with:
         go-version: '1.23'
 
@@ -41,7 +41,7 @@ jobs:
         go build -o aliasctl-${{ matrix.os }}-${{ matrix.arch }} ./cmd/aliasctl
 
     - name: Upload artifacts
-      uses: actions/upload-artifact@v2
+      uses: actions/upload-artifact@v4
       with:
         name: aliasctl-${{ matrix.os }}-${{ matrix.arch }}
         path: aliasctl-${{ matrix.os }}-${{ matrix.arch }}
@@ -53,10 +53,10 @@ jobs:
     
     steps:
     - name: Checkout code
-      uses: actions/checkout@v2
+      uses: actions/checkout@v4
 
     - name: Download all artifacts
-      uses: actions/download-artifact@v2
+      uses: actions/download-artifact@v4
 
     - name: Create Release
       id: create_release
