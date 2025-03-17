@@ -36,36 +36,50 @@ func (am *AliasManager) ApplyAliases() error {
 		newContent.WriteString(parts[0])
 		newContent.WriteString("# Aliases managed by AliasCtl\n")
 		if len(parts) > 1 && strings.Contains(parts[1], "# End of aliases managed by AliasCtl") {
-			parts = strings.SplitN(parts[1], "# End of aliases managed by AliasCtl", 2)
+			// Do nothing - we'll add a new section
 		}
 	} else {
 		newContent.WriteString("# Aliases managed by AliasCtl\n")
 	}
 
-	switch am.Shell {
-	case ShellPowerShell, ShellPowerShellCore:
-		for name, command := range am.Aliases {
-			if strings.Contains(command, " ") {
-				newContent.WriteString(fmt.Sprintf("function %s { %s }\n", name, command))
-			} else {
-				newContent.WriteString(fmt.Sprintf("Set-Alias %s %s\n", name, command))
+	for name, commands := range am.Aliases {
+		var command string
+		switch am.Shell {
+		case ShellBash:
+			command = commands.Bash
+		case ShellZsh:
+			command = commands.Zsh
+		case ShellFish:
+			command = commands.Fish
+		case ShellKsh:
+			command = commands.Ksh
+		case ShellPowerShell:
+			command = commands.PowerShell
+		case ShellPowerShellCore:
+			command = commands.PowerShellCore
+		case ShellCmd:
+			command = commands.Cmd
+		}
+
+		if command != "" {
+			switch am.Shell {
+			case ShellPowerShell, ShellPowerShellCore:
+				if strings.Contains(command, " ") {
+					newContent.WriteString(fmt.Sprintf("function %s { %s }\n", name, command))
+				} else {
+					newContent.WriteString(fmt.Sprintf("Set-Alias %s %s\n", name, command))
+				}
+			case ShellCmd:
+				newContent.WriteString(fmt.Sprintf("doskey %s=%s\n", name, command))
+			case ShellFish:
+				if strings.Contains(command, " ") {
+					newContent.WriteString(fmt.Sprintf("function %s\n    %s\nend\n", name, command))
+				} else {
+					newContent.WriteString(fmt.Sprintf("alias %s '%s'\n", name, command))
+				}
+			default:
+				newContent.WriteString(fmt.Sprintf("alias %s='%s'\n", name, command))
 			}
-		}
-	case ShellCmd:
-		for name, command := range am.Aliases {
-			newContent.WriteString(fmt.Sprintf("doskey %s=%s\n", name, command))
-		}
-	case ShellFish:
-		for name, command := range am.Aliases {
-			if strings.Contains(command, " ") {
-				newContent.WriteString(fmt.Sprintf("function %s\n    %s\nend\n", name, command))
-			} else {
-				newContent.WriteString(fmt.Sprintf("alias %s '%s'\n", name, command))
-			}
-		}
-	default:
-		for name, command := range am.Aliases {
-			newContent.WriteString(fmt.Sprintf("alias %s='%s'\n", name, command))
 		}
 	}
 
@@ -111,20 +125,36 @@ func (am *AliasManager) ImportAliasesFromShell() error {
 					if len(cmdParts) == 2 {
 						command := strings.TrimSpace(cmdParts[1])
 						command = strings.TrimSuffix(command, "}")
-						am.Aliases[name] = strings.TrimSpace(command)
+						commands := am.Aliases[name]
+						switch am.Shell {
+						case ShellPowerShell:
+							commands.PowerShell = strings.TrimSpace(command)
+						case ShellPowerShellCore:
+							commands.PowerShellCore = strings.TrimSpace(command)
+						}
+						am.Aliases[name] = commands
 					}
 				}
 			} else if strings.HasPrefix(line, "Set-Alias ") {
 				parts := strings.Fields(line[10:])
 				if len(parts) >= 2 {
-					am.Aliases[parts[0]] = parts[1]
+					commands := am.Aliases[parts[0]]
+					switch am.Shell {
+					case ShellPowerShell:
+						commands.PowerShell = parts[1]
+					case ShellPowerShellCore:
+						commands.PowerShellCore = parts[1]
+					}
+					am.Aliases[parts[0]] = commands
 				}
 			}
 		case ShellCmd:
 			if strings.HasPrefix(line, "doskey ") {
 				parts := strings.SplitN(line[7:], "=", 2)
 				if len(parts) == 2 {
-					am.Aliases[parts[0]] = parts[1]
+					commands := am.Aliases[parts[0]]
+					commands.Cmd = parts[1]
+					am.Aliases[parts[0]] = commands
 				}
 			}
 		case ShellFish:
@@ -134,7 +164,9 @@ func (am *AliasManager) ImportAliasesFromShell() error {
 				if len(parts) == 2 {
 					name := parts[0]
 					command := strings.Trim(parts[1], "'\"")
-					am.Aliases[name] = command
+					commands := am.Aliases[name]
+					commands.Fish = command
+					am.Aliases[name] = commands
 				}
 			} else if strings.HasPrefix(line, "function ") {
 				parts := strings.SplitN(line[9:], " ", 2)
@@ -143,7 +175,9 @@ func (am *AliasManager) ImportAliasesFromShell() error {
 					if scanner.Scan() {
 						command := strings.TrimSpace(scanner.Text())
 						if !strings.HasPrefix(command, "end") {
-							am.Aliases[name] = command
+							commands := am.Aliases[name]
+							commands.Fish = command
+							am.Aliases[name] = commands
 						}
 					}
 				}
@@ -155,7 +189,18 @@ func (am *AliasManager) ImportAliasesFromShell() error {
 				if len(parts) == 2 {
 					name := parts[0]
 					command := strings.Trim(parts[1], "'\"")
-					am.Aliases[name] = command
+					commands := am.Aliases[name]
+					switch am.Shell {
+					case ShellBash:
+						commands.Bash = command
+					case ShellZsh:
+						commands.Zsh = command
+					case ShellFish:
+						commands.Fish = command
+					case ShellKsh:
+						commands.Ksh = command
+					}
+					am.Aliases[name] = commands
 				}
 			}
 		}
@@ -169,56 +214,51 @@ func (am *AliasManager) ExportAliases(targetShell, outputFile string) error {
 	var content strings.Builder
 	content.WriteString("# Aliases exported by AliasCtl\n")
 
-	switch targetShell {
-	case "powershell", "pwsh":
-		for name, command := range am.Aliases {
+	for name, commands := range am.Aliases {
+		var command string
+		switch targetShell {
+		case "bash":
+			command = commands.Bash
+		case "zsh":
+			command = commands.Zsh
+		case "fish":
+			command = commands.Fish
+		case "ksh":
+			command = commands.Ksh
+		case "powershell":
+			command = commands.PowerShell
+		case "pwsh":
+			command = commands.PowerShellCore
+		case "cmd":
+			command = commands.Cmd
+		}
+
+		if command != "" {
 			if am.AIConfigured && string(am.Shell) != targetShell {
-				convertedCommand, err := am.ConvertAlias(name, targetShell)
+				convertedCommand, err := am.ConvertAlias(name, targetShell, "")
 				if err == nil {
 					command = convertedCommand
 				}
 			}
 
-			if strings.Contains(command, " ") {
-				content.WriteString(fmt.Sprintf("function %s { %s }\n", name, command))
-			} else {
-				content.WriteString(fmt.Sprintf("Set-Alias %s %s\n", name, command))
-			}
-		}
-	case "cmd":
-		for name, command := range am.Aliases {
-			if am.AIConfigured && string(am.Shell) != targetShell {
-				convertedCommand, err := am.ConvertAlias(name, targetShell)
-				if err == nil {
-					command = convertedCommand
+			switch targetShell {
+			case "powershell", "pwsh":
+				if strings.Contains(command, " ") {
+					content.WriteString(fmt.Sprintf("function %s { %s }\n", name, command))
+				} else {
+					content.WriteString(fmt.Sprintf("Set-Alias %s %s\n", name, command))
 				}
-			}
-			content.WriteString(fmt.Sprintf("doskey %s=%s\n", name, command))
-		}
-	case "fish":
-		for name, command := range am.Aliases {
-			if am.AIConfigured && string(am.Shell) != targetShell {
-				convertedCommand, err := am.ConvertAlias(name, targetShell)
-				if err == nil {
-					command = convertedCommand
+			case "cmd":
+				content.WriteString(fmt.Sprintf("doskey %s=%s\n", name, command))
+			case "fish":
+				if strings.Contains(command, " ") {
+					content.WriteString(fmt.Sprintf("function %s\n    %s\nend\n", name, command))
+				} else {
+					content.WriteString(fmt.Sprintf("alias %s '%s'\n", name, command))
 				}
+			default:
+				content.WriteString(fmt.Sprintf("alias %s='%s'\n", name, command))
 			}
-
-			if strings.Contains(command, " ") {
-				content.WriteString(fmt.Sprintf("function %s\n    %s\nend\n", name, command))
-			} else {
-				content.WriteString(fmt.Sprintf("alias %s '%s'\n", name, command))
-			}
-		}
-	default:
-		for name, command := range am.Aliases {
-			if am.AIConfigured && string(am.Shell) != targetShell {
-				convertedCommand, err := am.ConvertAlias(name, targetShell)
-				if err == nil {
-					command = convertedCommand
-				}
-			}
-			content.WriteString(fmt.Sprintf("alias %s='%s'\n", name, command))
 		}
 	}
 

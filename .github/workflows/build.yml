@@ -26,12 +26,35 @@ jobs:
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
+      with:
+        fetch-depth: 0  # Fetch all history for tags
 
     - name: Set up Go
       uses: actions/setup-go@v5
       with:
-        go-version: '1.23'
+        go-version: '1.21'
         cache: false
+
+    - name: Set version
+      id: set_version
+      run: |
+        # Try to get tag version
+        TAG_VERSION=$(git describe --tags --exact-match 2>/dev/null || echo "")
+        
+        # If no tag is available, use date-time stamp (MMDDHHMMSS)
+        if [ -z "$TAG_VERSION" ]; then
+          DATETIME=$(date +'%m%d%H%M%S')
+          VERSION="$DATETIME"
+        else
+          VERSION="$TAG_VERSION"
+        fi
+        
+        echo "VERSION=$VERSION" >> $GITHUB_ENV
+        echo "Version set to: $VERSION"
+        
+        # Update version.go
+        sed -i "s/Version = \".*\"/Version = \"$VERSION\"/" pkg/aliasctl/version.go
+        cat pkg/aliasctl/version.go
 
     - name: Run tests
       run: go test ./...
@@ -42,15 +65,22 @@ jobs:
       run: |
         GOOS=${{ matrix.os == 'ubuntu-latest' && 'linux' || matrix.os == 'windows-latest' && 'windows' || 'darwin' }}
         GOARCH=${{ matrix.arch }}
-        go build -o aliasctl-${{ matrix.os }}-${{ matrix.arch }} \
-          -ldflags "-s -w -extldflags '-static'" \
+        
+        # Define output filename with proper extension for Windows
+        EXT=""
+        if [[ "${{ matrix.os }}" == "windows-latest" ]]; then
+          EXT=".exe"
+        fi
+        
+        go build -o aliasctl-${{ matrix.os }}-${{ matrix.arch }}${EXT} \
+          -ldflags "-s -w -X github.com/aliasctl/aliasctl/pkg/aliasctl.Version=$VERSION" \
           ./cmd/aliasctl
 
     - name: Upload artifacts
       uses: actions/upload-artifact@v4
       with:
         name: aliasctl-${{ matrix.os }}-${{ matrix.arch }}
-        path: aliasctl-${{ matrix.os }}-${{ matrix.arch }}
+        path: aliasctl-${{ matrix.os }}-${{ matrix.arch }}${{ matrix.os == 'windows-latest' && '.exe' || '' }}
 
   release:
     needs: build
