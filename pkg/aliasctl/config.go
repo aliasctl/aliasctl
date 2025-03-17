@@ -6,6 +6,9 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+
+	"github.com/BurntSushi/toml"
+	"github.com/aliasctl/aliasctl/pkg/aliasctl/ai"
 )
 
 // getConfigDir returns the configuration directory for the application.
@@ -28,7 +31,7 @@ func getConfigDir() string {
 	return configDir
 }
 
-// LoadConfig loads the application configuration.
+// LoadConfig loads the application configuration, supporting both TOML and JSON for backward compatibility.
 func (am *AliasManager) LoadConfig() error {
 	data, err := os.ReadFile(am.ConfigFile)
 	if err != nil {
@@ -36,17 +39,32 @@ func (am *AliasManager) LoadConfig() error {
 	}
 
 	var config Config
-	if err := json.Unmarshal(data, &config); err != nil {
-		return err
+
+	// Try to parse as TOML first
+	err = toml.Unmarshal(data, &config)
+
+	// If TOML parsing fails, try JSON as fallback for backward compatibility
+	if err != nil {
+		err = json.Unmarshal(data, &config)
+		if err != nil {
+			return fmt.Errorf("failed to parse config as TOML or JSON: %v", err)
+		}
+
+		// If it was JSON, convert to TOML for future use
+		fmt.Println("Converting config from JSON to TOML format for better readability...")
+		if err := am.convertConfigToTOML(); err != nil {
+			fmt.Printf("Warning: Failed to convert config to TOML: %v\n", err)
+			// Continue anyway since we were able to load the JSON
+		}
 	}
 
 	am.Shell = config.DefaultShell
 	am.AliasFile = config.DefaultAliasFile
 	am.EncryptionUsed = config.UseEncryption
 
-	// Initialize map if nil
-	if am.AIProviders == nil {
-		am.AIProviders = make(map[string]AIProvider)
+	// Initialize aiManager if nil
+	if am.aiManager == nil {
+		am.aiManager = ai.NewManager()
 	}
 
 	// Handle API configuration - check for encrypted keys first
@@ -119,14 +137,14 @@ func (am *AliasManager) LoadConfig() error {
 	}
 
 	// Set default provider if one exists in config
-	if config.AIProvider != "" && am.AIProviders[config.AIProvider] != nil {
-		am.AIProvider = am.AIProviders[config.AIProvider]
+	if config.AIProvider != "" {
+		am.aiManager.SetDefaultProvider(config.AIProvider)
 	}
 
 	return nil
 }
 
-// SaveConfig saves the application configuration.
+// SaveConfig saves the application configuration in TOML format.
 func (am *AliasManager) SaveConfig() error {
 	config := Config{
 		DefaultShell:     am.Shell,
@@ -136,78 +154,198 @@ func (am *AliasManager) SaveConfig() error {
 	}
 
 	// Track which providers are configured
-	for name := range am.AIProviders {
+	providers := am.GetAvailableProviders()
+	for _, name := range providers {
 		config.AIProviders[name] = true
 	}
 
-	// Set default provider
-	if am.AIProvider != nil {
-		switch am.AIProvider.(type) {
-		case *OllamaProvider:
+	// Get default provider name
+	if am.aiManager != nil && am.aiManager.Default != nil {
+		// Determine the provider type
+		switch am.aiManager.Default.(type) {
+		case *ai.OllamaProvider:
 			config.AIProvider = "ollama"
-		case *OpenAIProvider:
+		case *ai.OpenAIProvider:
 			config.AIProvider = "openai"
-		case *AnthropicProvider:
+		case *ai.AnthropicProvider:
 			config.AIProvider = "anthropic"
 		}
 	}
 
 	// Configure providers
-	if provider, ok := am.AIProviders["ollama"]; ok {
-		if ollamaProvider, ok := provider.(*OllamaProvider); ok {
-			config.OllamaEndpoint = ollamaProvider.Endpoint
-			config.OllamaModel = ollamaProvider.Model
-		}
+	ollamaProvider, ok := am.aiManager.Providers["ollama"].(*ai.OllamaProvider)
+	if ok {
+		config.OllamaEndpoint = ollamaProvider.Endpoint
+		config.OllamaModel = ollamaProvider.Model
 	}
 
-	if provider, ok := am.AIProviders["openai"]; ok {
-		if openAIProvider, ok := provider.(*OpenAIProvider); ok {
-			config.OpenAIEndpoint = openAIProvider.Endpoint
-			config.OpenAIModel = openAIProvider.Model
+	openAIProvider, ok := am.aiManager.Providers["openai"].(*ai.OpenAIProvider)
+	if ok {
+		config.OpenAIEndpoint = openAIProvider.Endpoint
+		config.OpenAIModel = openAIProvider.Model
 
-			// Handle API key encryption
-			if am.EncryptionUsed {
-				encryptedKey, err := EncryptString(openAIProvider.APIKey, am.EncryptionKey)
-				if err == nil {
-					config.OpenAIKeyEncrypted = encryptedKey
-					config.OpenAIKey = "" // Clear plaintext key
-				} else {
-					fmt.Printf("Warning: Failed to encrypt API key: %v\n", err)
-					fmt.Printf("API key will be stored in plaintext. Run 'aliasctl encrypt-api-keys' to retry encryption.\n")
-					config.OpenAIKey = openAIProvider.APIKey
-				}
+		// Handle API key encryption
+		if am.EncryptionUsed {
+			encryptedKey, err := EncryptString(openAIProvider.APIKey, am.EncryptionKey)
+			if err == nil {
+				config.OpenAIKeyEncrypted = encryptedKey
+				config.OpenAIKey = "" // Clear plaintext key
 			} else {
+				fmt.Printf("Warning: Failed to encrypt API key: %v\n", err)
+				fmt.Printf("API key will be stored in plaintext. Run 'aliasctl encrypt-api-keys' to retry encryption.\n")
 				config.OpenAIKey = openAIProvider.APIKey
 			}
+		} else {
+			config.OpenAIKey = openAIProvider.APIKey
 		}
 	}
 
-	if provider, ok := am.AIProviders["anthropic"]; ok {
-		if anthropicProvider, ok := provider.(*AnthropicProvider); ok {
-			config.AnthropicEndpoint = anthropicProvider.Endpoint
-			config.AnthropicModel = anthropicProvider.Model
+	anthropicProvider, ok := am.aiManager.Providers["anthropic"].(*ai.AnthropicProvider)
+	if ok {
+		config.AnthropicEndpoint = anthropicProvider.Endpoint
+		config.AnthropicModel = anthropicProvider.Model
 
-			// Handle API key encryption
-			if am.EncryptionUsed {
-				encryptedKey, err := EncryptString(anthropicProvider.APIKey, am.EncryptionKey)
-				if err == nil {
-					config.AnthropicKeyEncrypted = encryptedKey
-					config.AnthropicKey = "" // Clear plaintext key
-				} else {
-					fmt.Printf("Warning: Failed to encrypt Anthropic API key: %v\n", err)
-					fmt.Printf("API key will be stored in plaintext. Run 'aliasctl encrypt-api-keys' to retry encryption.\n")
-					config.AnthropicKey = anthropicProvider.APIKey
-				}
+		// Handle API key encryption
+		if am.EncryptionUsed {
+			encryptedKey, err := EncryptString(anthropicProvider.APIKey, am.EncryptionKey)
+			if err == nil {
+				config.AnthropicKeyEncrypted = encryptedKey
+				config.AnthropicKey = "" // Clear plaintext key
 			} else {
+				fmt.Printf("Warning: Failed to encrypt Anthropic API key: %v\n", err)
+				fmt.Printf("API key will be stored in plaintext. Run 'aliasctl encrypt-api-keys' to retry encryption.\n")
 				config.AnthropicKey = anthropicProvider.APIKey
 			}
+		} else {
+			config.AnthropicKey = anthropicProvider.APIKey
 		}
 	}
 
-	data, err := json.MarshalIndent(config, "", "  ")
+	file, err := os.Create(am.ConfigFile)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	return toml.NewEncoder(file).Encode(config)
+}
+
+// convertConfigToTOML reads the existing JSON config file, parses it, and writes it back as TOML.
+// It creates a backup of the original JSON file before conversion.
+func (am *AliasManager) convertConfigToTOML() error {
+	// Read existing JSON file
+	data, err := os.ReadFile(am.ConfigFile)
 	if err != nil {
 		return err
 	}
 
-	return os.WriteFile(am.ConfigFile, data, 0644)
+	// Parse JSON
+	var config Config
+	if err := json.Unmarshal(data, &config); err != nil {
+		return err
+	}
+
+	// Create backup of original file
+	backupFile := am.ConfigFile + ".json.bak"
+	if err := os.WriteFile(backupFile, data, 0644); err != nil {
+		return fmt.Errorf("failed to create backup file: %v", err)
+	}
+
+	// Write as TOML
+	file, err := os.Create(am.ConfigFile)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	if err := toml.NewEncoder(file).Encode(config); err != nil {
+		// Restore from backup if TOML encoding fails
+		if restoreErr := os.Rename(backupFile, am.ConfigFile); restoreErr != nil {
+			return fmt.Errorf("TOML encoding failed: %v, and restore failed: %v", err, restoreErr)
+		}
+		return err
+	}
+
+	fmt.Printf("Config converted to TOML. Original JSON backup saved as %s\n", backupFile)
+	return nil
+}
+
+// AddLoadAliasesTomlSupport modifies the existing LoadAliases method to support TOML format
+// This should be called from the original LoadAliases method in alias_manager.go
+func (am *AliasManager) AddLoadAliasesTomlSupport(data []byte) error {
+	// Try to parse as TOML first
+	err := toml.Unmarshal(data, &am.Aliases)
+
+	// If TOML parsing fails, try JSON as fallback for backward compatibility
+	if err != nil {
+		err = json.Unmarshal(data, &am.Aliases)
+		if err != nil {
+			return fmt.Errorf("failed to parse aliases as TOML or JSON: %v", err)
+		}
+
+		// If it was JSON, convert to TOML for future use
+		fmt.Println("Converting aliases from JSON to TOML format for better readability...")
+		if err := am.convertAliasesToTOML(); err != nil {
+			fmt.Printf("Warning: Failed to convert aliases to TOML: %v\n", err)
+		}
+	}
+
+	return nil
+}
+
+// AddSaveAliasesTomlSupport modifies the existing SaveAliases method to use TOML format
+// This should be called from the original SaveAliases method in alias_manager.go
+func (am *AliasManager) AddSaveAliasesTomlSupport() error {
+	// Create the directory if it doesn't exist
+	dir := filepath.Dir(am.AliasStore)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return err
+	}
+
+	file, err := os.Create(am.AliasStore)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	return toml.NewEncoder(file).Encode(am.Aliases)
+}
+
+// convertAliasesToTOML reads the existing JSON aliases file, parses it, and writes it back as TOML.
+func (am *AliasManager) convertAliasesToTOML() error {
+	// Read existing JSON file
+	data, err := os.ReadFile(am.AliasStore)
+	if err != nil {
+		return err
+	}
+
+	// Parse JSON
+	aliases := make(map[string]AliasCommands)
+	if err := json.Unmarshal(data, &aliases); err != nil {
+		return err
+	}
+
+	// Create backup of original file
+	backupFile := am.AliasStore + ".json.bak"
+	if err := os.WriteFile(backupFile, data, 0644); err != nil {
+		return fmt.Errorf("failed to create backup file: %v", err)
+	}
+
+	// Write as TOML
+	file, err := os.Create(am.AliasStore)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	if err := toml.NewEncoder(file).Encode(aliases); err != nil {
+		// Restore from backup if TOML encoding fails
+		if restoreErr := os.Rename(backupFile, am.AliasStore); restoreErr != nil {
+			return fmt.Errorf("TOML encoding failed: %v, and restore failed: %v", err, restoreErr)
+		}
+		return err
+	}
+
+	fmt.Printf("Aliases converted to TOML. Original JSON backup saved as %s\n", backupFile)
+	return nil
 }

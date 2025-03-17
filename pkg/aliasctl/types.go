@@ -1,5 +1,9 @@
 package aliasctl
 
+import (
+	"github.com/aliasctl/aliasctl/pkg/aliasctl/ai"
+)
+
 // ShellType represents the type of shell.
 type ShellType string
 
@@ -31,9 +35,8 @@ type AliasManager struct {
 	Shell          ShellType                // The type of shell
 	AliasFile      string                   // The path to the alias file
 	Aliases        map[string]AliasCommands // A map of alias names to shell-specific commands
-	AIProvider     AIProvider               // The configured AI provider (for backward compatibility)
-	AIProviders    map[string]AIProvider    // Map of configured AI providers by name
 	AIConfigured   bool                     // Whether an AI provider is configured
+	aiManager      *ai.Manager              // Manager for AI providers
 	ConfigDir      string                   // The configuration directory
 	AliasStore     string                   // The path to the alias store file
 	ConfigFile     string                   // The path to the configuration file
@@ -63,6 +66,7 @@ type Config struct {
 // AIProvider interface for AI services.
 type AIProvider interface {
 	ConvertAlias(alias, fromShell, toShell string) (string, error) // Converts an alias from one shell to another
+	GenerateAlias(command, shellType string) (string, error)       // Generates an alias for a command
 }
 
 // OllamaProvider implements AIProvider for Ollama.

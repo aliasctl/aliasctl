@@ -4,25 +4,43 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 )
 
-// LoadAliases loads aliases from the JSON store.
+// LoadAliases loads aliases from the alias store file.
 func (am *AliasManager) LoadAliases() error {
-	if _, err := os.Stat(am.AliasStore); os.IsNotExist(err) {
-		am.Aliases = make(map[string]AliasCommands)
-		return nil
-	}
-
 	data, err := os.ReadFile(am.AliasStore)
 	if err != nil {
+		if os.IsNotExist(err) {
+			am.Aliases = make(map[string]AliasCommands)
+			return nil
+		}
 		return err
 	}
 
-	return json.Unmarshal(data, &am.Aliases)
+	// Use the TOML support function if it exists, otherwise fall back to JSON
+	if err := am.AddLoadAliasesTomlSupport(data); err != nil {
+		// Fall back to JSON parsing for backward compatibility or if TOML parsing fails
+		return json.Unmarshal(data, &am.Aliases)
+	}
+
+	return nil
 }
 
-// SaveAliases saves aliases to the JSON store.
+// SaveAliases saves aliases to the alias store file.
 func (am *AliasManager) SaveAliases() error {
+	// Create the directory if it doesn't exist
+	dir := filepath.Dir(am.AliasStore)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return err
+	}
+
+	// Try to use TOML support if available
+	if err := am.AddSaveAliasesTomlSupport(); err == nil {
+		return nil
+	}
+
+	// Fall back to JSON if TOML encoding fails
 	data, err := json.MarshalIndent(am.Aliases, "", "  ")
 	if err != nil {
 		return err

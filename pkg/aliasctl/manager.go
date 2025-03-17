@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+
+	"github.com/aliasctl/aliasctl/pkg/aliasctl/ai"
 )
 
 // NewAliasManager creates a new AliasManager.
@@ -16,7 +18,7 @@ func NewAliasManager() *AliasManager {
 		Platform:       platform,
 		Aliases:        make(map[string]AliasCommands),
 		AIConfigured:   false,
-		AIProviders:    make(map[string]AIProvider),
+		aiManager:      ai.NewManager(),
 		ConfigDir:      configDir,
 		AliasStore:     filepath.Join(configDir, "aliases.json"),
 		ConfigFile:     filepath.Join(configDir, "config.json"),

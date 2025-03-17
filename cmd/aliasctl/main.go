@@ -262,8 +262,8 @@ func executeCommand(am *aliasctl.AliasManager, command string, args []string) in
 		fmt.Println("Configured AI providers:")
 		for _, provider := range providers {
 			fmt.Println("- " + provider)
-			return 1
 		}
+		return 0
 
 	case "generate":
 		if len(args) < 1 {
@@ -294,19 +294,42 @@ func executeCommand(am *aliasctl.AliasManager, command string, args []string) in
 
 		fmt.Printf("Generated alias suggestion: %s\n", aliasCommand)
 
-		// Ask if the user wants to save this alias
-		fmt.Print("Do you want to save this alias? (y/n): ")
-		var response string
-		fmt.Scanln(&response)
+		// Parse the alias name and command
+		aliasName, aliasCmd := parseAliasDefinition(aliasCommand, string(am.Shell))
+		if aliasName == "" || aliasCmd == "" {
+			fmt.Println("Could not parse the alias definition.")
+			return 1
+		}
 
-		if strings.ToLower(response) == "y" || strings.ToLower(response) == "yes" {
-			// Parse the alias name and command
-			aliasName, aliasCmd := parseAliasDefinition(aliasCommand, string(am.Shell))
-			if aliasName == "" || aliasCmd == "" {
-				fmt.Println("Could not parse the alias definition.")
-				return 1
+		// Ask if user wants to use suggested name or provide a different one
+		fmt.Printf("Use suggested alias name '%s'? [Y/n/custom name]: ", aliasName)
+		var nameResponse string
+		fmt.Scanln(&nameResponse)
+
+		nameResponse = strings.TrimSpace(nameResponse)
+		if nameResponse != "" && strings.ToLower(nameResponse) != "y" && strings.ToLower(nameResponse) != "yes" {
+			// If response isn't yes/y and isn't empty, use the response as the custom name
+			if strings.ToLower(nameResponse) != "n" && strings.ToLower(nameResponse) != "no" {
+				aliasName = nameResponse
+			} else {
+				// User entered n/no, so prompt for the name explicitly
+				fmt.Print("Enter custom alias name: ")
+				fmt.Scanln(&aliasName)
+				aliasName = strings.TrimSpace(aliasName)
+
+				if aliasName == "" {
+					fmt.Println("Alias name cannot be empty. Aborting.")
+					return 1
+				}
 			}
+		}
 
+		// Ask if the user wants to save this alias
+		fmt.Print("Save this alias? [Y/n]: ")
+		var saveResponse string
+		fmt.Scanln(&saveResponse)
+
+		if saveResponse == "" || strings.ToLower(saveResponse) == "y" || strings.ToLower(saveResponse) == "yes" {
 			am.AddAlias(aliasName, aliasCmd)
 			if err := am.SaveAliases(); err != nil {
 				fmt.Println("Error saving alias:", err)
@@ -316,6 +339,26 @@ func executeCommand(am *aliasctl.AliasManager, command string, args []string) in
 		} else {
 			fmt.Println("Alias not saved.")
 		}
+
+	case "completion":
+		if len(args) < 1 {
+			fmt.Println("Usage: aliasctl completion <shell>")
+			return 1
+		}
+		script, err := am.GenerateCompletionScript(args[0])
+		if err != nil {
+			fmt.Println("Error generating completion script:", err)
+			return 1
+		}
+		fmt.Println(script)
+		return 0
+
+	case "install-completion":
+		if err := am.InstallCompletionScript(); err != nil {
+			fmt.Println("Error installing completion script:", err)
+			return 1
+		}
+		return 0
 
 	default:
 		printUsage()
@@ -406,6 +449,8 @@ func printUsage() {
 	fmt.Println("  disable-encryption                     - Disable API key encryption")
 	fmt.Println("  list-providers                         - List all configured AI providers")
 	fmt.Println("  generate <command> [provider]          - Generate alias suggestion for a command")
+	fmt.Println("  completion <shell>                     - Generate completion script for specified shell")
+	fmt.Println("  install-completion                     - Install completion script for current shell")
 	fmt.Println("Supported shells: bash, zsh, fish, ksh, powershell, pwsh (PowerShell Core), cmd")
 	fmt.Println("Supported AI providers: ollama, openai, anthropic")
 }
