@@ -1,5 +1,7 @@
 # AliasCtl - Cross-platform Shell Alias Manager
 
+![AliasCtl Logo](assets/aliasctl_logo_small.png)
+
 AliasCtl is a powerful tool that helps you manage shell aliases across different operating systems and shell environments. With AI-powered alias generation and conversion capabilities, it makes working with shell aliases easier than ever.
 
 ## What is AliasCtl? 🤔
