@@ -1,6 +1,7 @@
 package aliasctl
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -10,10 +11,15 @@ import (
 func DetectShellAndAliasFile(platform string) (ShellType, string) {
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
-		return "", ""
+		fmt.Printf("Warning: Failed to determine home directory: %v\n", err)
+		fmt.Println("Using current directory as a fallback.")
+		homeDir, _ = os.Getwd()
 	}
 
 	shellEnv := os.Getenv("SHELL")
+	if shellEnv == "" && platform != "windows" {
+		fmt.Println("Warning: SHELL environment variable not set. Defaulting to bash.")
+	}
 
 	var shell ShellType
 	var aliasFile string
@@ -42,6 +48,15 @@ func DetectShellAndAliasFile(platform string) (ShellType, string) {
 		default:
 			shell = ShellBash
 			aliasFile = filepath.Join(homeDir, ".bash_aliases")
+		}
+	}
+
+	// Verify the file exists or is writable
+	if _, err := os.Stat(aliasFile); os.IsNotExist(err) {
+		// Check if directory exists
+		dir := filepath.Dir(aliasFile)
+		if _, err := os.Stat(dir); os.IsNotExist(err) {
+			fmt.Printf("Note: Destination directory %s does not exist. It will be created when needed.\n", dir)
 		}
 	}
 

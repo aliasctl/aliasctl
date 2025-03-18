@@ -8,6 +8,9 @@ import (
 )
 
 // LoadAliases loads aliases from the alias store file.
+// It reads the stored aliases from disk into memory, supporting both TOML and JSON formats.
+// If the file does not exist, it initializes an empty alias collection.
+// Returns an error if the file exists but cannot be read or parsed.
 func (am *AliasManager) LoadAliases() error {
 	data, err := os.ReadFile(am.AliasStore)
 	if err != nil {
@@ -28,6 +31,9 @@ func (am *AliasManager) LoadAliases() error {
 }
 
 // SaveAliases saves aliases to the alias store file.
+// It writes the current aliases from memory to disk, creating any necessary directories.
+// The file is saved in TOML format if supported, otherwise JSON is used.
+// Returns an error if the file cannot be created or written.
 func (am *AliasManager) SaveAliases() error {
 	// Create the directory if it doesn't exist
 	dir := filepath.Dir(am.AliasStore)
@@ -49,7 +55,10 @@ func (am *AliasManager) SaveAliases() error {
 	return os.WriteFile(am.AliasStore, data, 0644)
 }
 
-// AddAlias adds a new alias.
+// AddAlias adds a new alias to the collection.
+// It maps the given name to the command for the current shell type.
+// If an alias with the same name already exists, it will be overwritten.
+// The alias is stored in memory but not saved to disk until SaveAliases is called.
 func (am *AliasManager) AddAlias(name, command string) {
 	commands := am.Aliases[name]
 	switch am.Shell {
@@ -71,7 +80,9 @@ func (am *AliasManager) AddAlias(name, command string) {
 	am.Aliases[name] = commands
 }
 
-// RemoveAlias removes an alias.
+// RemoveAlias removes an alias by name from the collection.
+// It returns true if the alias was found and removed, false if it wasn't found.
+// The change is stored in memory but not saved to disk until SaveAliases is called.
 func (am *AliasManager) RemoveAlias(name string) bool {
 	if _, exists := am.Aliases[name]; exists {
 		delete(am.Aliases, name)
@@ -80,7 +91,9 @@ func (am *AliasManager) RemoveAlias(name string) bool {
 	return false
 }
 
-// ListAliases prints all aliases.
+// ListAliases prints all aliases for the current shell type.
+// It displays the aliases in a "name = command" format, sorted by name.
+// If no aliases are defined, it prints a message indicating that.
 func (am *AliasManager) ListAliases() {
 	fmt.Printf("Aliases for %s shell on %s platform:\n", am.Shell, am.Platform)
 	if len(am.Aliases) == 0 {
@@ -113,6 +126,8 @@ func (am *AliasManager) ListAliases() {
 }
 
 // SetShell manually sets the shell type.
+// It validates that the shell is one of the supported types and updates the configuration.
+// Returns an error if the shell type is not supported or if saving the configuration fails.
 func (am *AliasManager) SetShell(shell string) error {
 	switch shell {
 	case "bash":
@@ -130,12 +145,14 @@ func (am *AliasManager) SetShell(shell string) error {
 	case "cmd":
 		am.Shell = ShellCmd
 	default:
-		return fmt.Errorf("unsupported shell: %s", shell)
+		return fmt.Errorf("unsupported shell: %s (supported shells: bash, zsh, fish, ksh, powershell, pwsh, cmd)", shell)
 	}
 	return am.SaveConfig()
 }
 
 // SetAliasFile manually sets the alias file path.
+// It updates the configuration to use the specified file path for storing aliases.
+// Returns an error if saving the configuration fails.
 func (am *AliasManager) SetAliasFile(filePath string) error {
 	am.AliasFile = filePath
 	return am.SaveConfig()

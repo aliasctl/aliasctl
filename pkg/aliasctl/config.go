@@ -35,7 +35,13 @@ func getConfigDir() string {
 func (am *AliasManager) LoadConfig() error {
 	data, err := os.ReadFile(am.ConfigFile)
 	if err != nil {
-		return err
+		if os.IsNotExist(err) {
+			return fmt.Errorf("config file not found at %s\n\nRun 'aliasctl detect-shell' or manually set your shell with 'aliasctl set-shell'", am.ConfigFile)
+		}
+		if os.IsPermission(err) {
+			return fmt.Errorf("permission denied when accessing config file at %s\n\nCheck file permissions or run with appropriate privileges", am.ConfigFile)
+		}
+		return fmt.Errorf("failed to read config file: %w", err)
 	}
 
 	var config Config
@@ -47,7 +53,7 @@ func (am *AliasManager) LoadConfig() error {
 	if err != nil {
 		err = json.Unmarshal(data, &config)
 		if err != nil {
-			return fmt.Errorf("failed to parse config as TOML or JSON: %v", err)
+			return fmt.Errorf("failed to parse config file - invalid format\n\nThe config file at %s is neither valid TOML nor JSON\nConsider running 'aliasctl set-shell' to regenerate it", am.ConfigFile)
 		}
 
 		// If it was JSON, convert to TOML for future use
@@ -223,11 +229,32 @@ func (am *AliasManager) SaveConfig() error {
 
 	file, err := os.Create(am.ConfigFile)
 	if err != nil {
-		return err
+		if os.IsPermission(err) {
+			return fmt.Errorf("permission denied when saving config file to %s\n\nCheck directory permissions or run with appropriate privileges", am.ConfigFile)
+		}
+
+		// Check if directory exists
+		dir := filepath.Dir(am.ConfigFile)
+		if _, statErr := os.Stat(dir); os.IsNotExist(statErr) {
+			if mkdirErr := os.MkdirAll(dir, 0755); mkdirErr != nil {
+				return fmt.Errorf("failed to create config directory %s: %w", dir, mkdirErr)
+			}
+			// Try creating file again after making directory
+			file, err = os.Create(am.ConfigFile)
+			if err != nil {
+				return fmt.Errorf("failed to create config file at %s even after creating directory: %w", am.ConfigFile, err)
+			}
+		} else {
+			return fmt.Errorf("failed to create config file at %s: %w", am.ConfigFile, err)
+		}
 	}
 	defer file.Close()
 
-	return toml.NewEncoder(file).Encode(config)
+	if err := toml.NewEncoder(file).Encode(config); err != nil {
+		return fmt.Errorf("failed to write TOML configuration: %w\n\nThis might be due to invalid data or disk issues", err)
+	}
+
+	return nil
 }
 
 // convertConfigToTOML reads the existing JSON config file, parses it, and writes it back as TOML.
@@ -248,7 +275,7 @@ func (am *AliasManager) convertConfigToTOML() error {
 	// Create backup of original file
 	backupFile := am.ConfigFile + ".json.bak"
 	if err := os.WriteFile(backupFile, data, 0644); err != nil {
-		return fmt.Errorf("failed to create backup file: %v", err)
+		return fmt.Errorf("failed to create backup file %s: %w (check disk space and permissions)", backupFile, err)
 	}
 
 	// Write as TOML
@@ -280,7 +307,7 @@ func (am *AliasManager) AddLoadAliasesTomlSupport(data []byte) error {
 	if err != nil {
 		err = json.Unmarshal(data, &am.Aliases)
 		if err != nil {
-			return fmt.Errorf("failed to parse aliases as TOML or JSON: %v", err)
+			return fmt.Errorf("failed to parse aliases file - invalid format\n\nThe aliases file at %s is neither valid TOML nor JSON\nIt might be corrupted or from an incompatible version", am.AliasStore)
 		}
 
 		// If it was JSON, convert to TOML for future use
@@ -299,16 +326,20 @@ func (am *AliasManager) AddSaveAliasesTomlSupport() error {
 	// Create the directory if it doesn't exist
 	dir := filepath.Dir(am.AliasStore)
 	if err := os.MkdirAll(dir, 0755); err != nil {
-		return err
+		return fmt.Errorf("failed to create directory %s: %w\n\nCheck permissions or run with appropriate privileges", dir, err)
 	}
 
 	file, err := os.Create(am.AliasStore)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to create aliases file at %s: %w\n\nCheck permissions or disk space issues", am.AliasStore, err)
 	}
 	defer file.Close()
 
-	return toml.NewEncoder(file).Encode(am.Aliases)
+	if err := toml.NewEncoder(file).Encode(am.Aliases); err != nil {
+		return fmt.Errorf("failed to encode aliases as TOML: %w\n\nThis might be due to invalid data or disk issues", err)
+	}
+
+	return nil
 }
 
 // convertAliasesToTOML reads the existing JSON aliases file, parses it, and writes it back as TOML.
@@ -328,7 +359,7 @@ func (am *AliasManager) convertAliasesToTOML() error {
 	// Create backup of original file
 	backupFile := am.AliasStore + ".json.bak"
 	if err := os.WriteFile(backupFile, data, 0644); err != nil {
-		return fmt.Errorf("failed to create backup file: %v", err)
+		return fmt.Errorf("failed to create backup file %s: %w (check disk space and permissions)", backupFile, err)
 	}
 
 	// Write as TOML

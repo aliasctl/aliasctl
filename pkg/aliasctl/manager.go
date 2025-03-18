@@ -14,6 +14,13 @@ func NewAliasManager() *AliasManager {
 	platform := runtime.GOOS
 	configDir := getConfigDir()
 
+	// Fix the GetEncryptionKeyPath call to handle both return values
+	encryptionKeyPath, err := GetEncryptionKeyPath(configDir)
+	if err != nil {
+		fmt.Printf("Warning: failed to get encryption key path: %v\n", err)
+		encryptionKeyPath = filepath.Join(configDir, "encryption.key") // Fallback path
+	}
+
 	am := &AliasManager{
 		Platform:       platform,
 		Aliases:        make(map[string]AliasCommands),
@@ -22,7 +29,7 @@ func NewAliasManager() *AliasManager {
 		ConfigDir:      configDir,
 		AliasStore:     filepath.Join(configDir, "aliases.json"),
 		ConfigFile:     filepath.Join(configDir, "config.json"),
-		EncryptionKey:  GetEncryptionKeyPath(configDir),
+		EncryptionKey:  encryptionKeyPath,
 		EncryptionUsed: false,
 	}
 

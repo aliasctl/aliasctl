@@ -3,6 +3,7 @@ package ai
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 )
 
 // AnthropicProvider implements Provider for Anthropic Claude.
@@ -18,8 +19,13 @@ func (ap *AnthropicProvider) GenerateAlias(command, shellType string) (string, e
 		return "", err
 	}
 
+	// Check API key
+	if ap.APIKey == "" {
+		return "", fmt.Errorf("anthropic API key is empty: please configure a valid API key with 'aliasctl configure-anthropic'")
+	}
+
 	// Build the request payload
-	requestBody, err := json.Marshal(map[string]interface{}{
+	requestBody, err := json.Marshal(map[string]any{
 		"model": ap.Model,
 		"messages": []map[string]string{
 			{
@@ -31,7 +37,7 @@ func (ap *AnthropicProvider) GenerateAlias(command, shellType string) (string, e
 		"temperature": 0.3, // Moderate creativity
 	})
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("failed to create Anthropic request: %w", err)
 	}
 
 	// Prepare headers
@@ -42,7 +48,17 @@ func (ap *AnthropicProvider) GenerateAlias(command, shellType string) (string, e
 
 	respBody, err := MakeAPIRequest("POST", ap.Endpoint+"/v1/messages", headers, requestBody)
 	if err != nil {
-		return "", fmt.Errorf("anthropic request failed: %v", err)
+		// Check for authentication errors
+		if strings.Contains(err.Error(), "401") || strings.Contains(err.Error(), "403") {
+			return "", fmt.Errorf("anthropic API authentication error: invalid API key. Check your API key or regenerate it in the Anthropic dashboard")
+		}
+
+		// Check for model errors
+		if strings.Contains(err.Error(), "model") && strings.Contains(strings.ToLower(err.Error()), "not found") {
+			return "", fmt.Errorf("anthropic model '%s' not found: check available models in your Anthropic account", ap.Model)
+		}
+
+		return "", fmt.Errorf("anthropic request failed: %w", err)
 	}
 
 	var result struct {
@@ -50,10 +66,19 @@ func (ap *AnthropicProvider) GenerateAlias(command, shellType string) (string, e
 			Type string `json:"type"`
 			Text string `json:"text"`
 		} `json:"content"`
+		Error struct {
+			Type    string `json:"type"`
+			Message string `json:"message"`
+		} `json:"error"`
 	}
 
 	if err := json.Unmarshal(respBody, &result); err != nil {
-		return "", err
+		return "", fmt.Errorf("failed to parse Anthropic response: %w\n\nRaw response: %s", err, limitResponseText(string(respBody), 200))
+	}
+
+	// Check if there's an error in the response
+	if result.Error.Message != "" {
+		return "", fmt.Errorf("anthropic API error: %s", result.Error.Message)
 	}
 
 	// Process the response content
@@ -66,7 +91,7 @@ func (ap *AnthropicProvider) GenerateAlias(command, shellType string) (string, e
 	}
 
 	if responseText == "" {
-		return "", fmt.Errorf("no text response found in Anthropic Claude reply")
+		return "", fmt.Errorf("no text response found in anthropic Claude reply\n\nRaw response: %s", limitResponseText(string(respBody), 200))
 	}
 
 	return ExtractAliasDefinition(responseText), nil
@@ -78,8 +103,13 @@ func (ap *AnthropicProvider) ConvertAlias(alias, fromShell, toShell string) (str
 		return "", err
 	}
 
+	// Check API key
+	if ap.APIKey == "" {
+		return "", fmt.Errorf("anthropic API key is empty: please configure a valid API key with 'aliasctl configure-anthropic'")
+	}
+
 	// Build the request payload
-	requestBody, err := json.Marshal(map[string]interface{}{
+	requestBody, err := json.Marshal(map[string]any{
 		"model": ap.Model,
 		"messages": []map[string]string{
 			{
@@ -91,7 +121,7 @@ func (ap *AnthropicProvider) ConvertAlias(alias, fromShell, toShell string) (str
 		"temperature": 0.1, // Lower temperature for more deterministic results
 	})
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("failed to create Anthropic request: %w", err)
 	}
 
 	// Prepare headers
@@ -102,7 +132,17 @@ func (ap *AnthropicProvider) ConvertAlias(alias, fromShell, toShell string) (str
 
 	respBody, err := MakeAPIRequest("POST", ap.Endpoint+"/v1/messages", headers, requestBody)
 	if err != nil {
-		return "", fmt.Errorf("anthropic request failed: %v", err)
+		// Check for authentication errors
+		if strings.Contains(err.Error(), "401") || strings.Contains(err.Error(), "403") {
+			return "", fmt.Errorf("anthropic API authentication error: invalid API key. Check your API key or regenerate it in the Anthropic dashboard")
+		}
+
+		// Check for model errors
+		if strings.Contains(err.Error(), "model") && strings.Contains(strings.ToLower(err.Error()), "not found") {
+			return "", fmt.Errorf("anthropic model '%s' not found: check available models in your Anthropic account", ap.Model)
+		}
+
+		return "", fmt.Errorf("anthropic request failed: %w", err)
 	}
 
 	var result struct {
@@ -110,10 +150,19 @@ func (ap *AnthropicProvider) ConvertAlias(alias, fromShell, toShell string) (str
 			Type string `json:"type"`
 			Text string `json:"text"`
 		} `json:"content"`
+		Error struct {
+			Type    string `json:"type"`
+			Message string `json:"message"`
+		} `json:"error"`
 	}
 
 	if err := json.Unmarshal(respBody, &result); err != nil {
-		return "", err
+		return "", fmt.Errorf("failed to parse Anthropic response: %w\n\nRaw response: %s", err, limitResponseText(string(respBody), 200))
+	}
+
+	// Check if there's an error in the response
+	if result.Error.Message != "" {
+		return "", fmt.Errorf("anthropic API error: %s", result.Error.Message)
 	}
 
 	// Process the response content
@@ -126,7 +175,7 @@ func (ap *AnthropicProvider) ConvertAlias(alias, fromShell, toShell string) (str
 	}
 
 	if responseText == "" {
-		return "", fmt.Errorf("no text response found in Anthropic Claude reply")
+		return "", fmt.Errorf("no text response found in anthropic Claude reply\n\nRaw response: %s", limitResponseText(string(respBody), 200))
 	}
 
 	return ExtractAliasDefinition(responseText), nil

@@ -9,6 +9,10 @@ import (
 )
 
 // ApplyAliases writes the aliases to the shell configuration file.
+// It manages a special section in the shell configuration file marked with comments,
+// preserving any other content in the file. Aliases are formatted according to the
+// syntax rules of the current shell type.
+// Returns an error if writing to the file fails.
 func (am *AliasManager) ApplyAliases() error {
 	existingContent := ""
 	existingAliasSection := false
@@ -101,13 +105,16 @@ func (am *AliasManager) ApplyAliases() error {
 }
 
 // ImportAliasesFromShell imports aliases from the shell configuration file.
+// It parses the shell configuration file to extract alias definitions using
+// shell-specific patterns, and adds them to the AliasManager's collection.
+// Returns an error if the file cannot be read or parsed.
 func (am *AliasManager) ImportAliasesFromShell() error {
 	file, err := os.Open(am.AliasFile)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return nil
+			return fmt.Errorf("shell configuration file does not exist at %s. You can create it or specify a different file with 'aliasctl set-file'", am.AliasFile)
 		}
-		return err
+		return fmt.Errorf("failed to open shell configuration file %s: %w (check file permissions)", am.AliasFile, err)
 	}
 	defer file.Close()
 
@@ -210,6 +217,10 @@ func (am *AliasManager) ImportAliasesFromShell() error {
 }
 
 // ExportAliases exports aliases to a different shell format.
+// It writes all aliases to a specified file, formatted according to the
+// syntax rules of the target shell. If AI is configured and the target shell
+// differs from the current shell, it will attempt to convert the aliases.
+// Returns an error if the file cannot be created or written.
 func (am *AliasManager) ExportAliases(targetShell, outputFile string) error {
 	var content strings.Builder
 	content.WriteString("# Aliases exported by AliasCtl\n")
@@ -266,8 +277,12 @@ func (am *AliasManager) ExportAliases(targetShell, outputFile string) error {
 
 	dir := filepath.Dir(outputFile)
 	if err := os.MkdirAll(dir, 0755); err != nil {
-		return err
+		return fmt.Errorf("failed to create directory %s: %w (check directory permissions)", dir, err)
 	}
 
-	return os.WriteFile(outputFile, []byte(content.String()), 0644)
+	if err := os.WriteFile(outputFile, []byte(content.String()), 0644); err != nil {
+		return fmt.Errorf("failed to write to file %s: %w (check file permissions)", outputFile, err)
+	}
+
+	return nil
 }
